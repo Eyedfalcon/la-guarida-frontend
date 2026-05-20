@@ -37,6 +37,20 @@ public class ReservationsController : ControllerBase
         return true;
     }
 
+    private static List<BarberBusinessHour> GetDefaultHours(int barberId)
+    {
+        return new List<BarberBusinessHour>
+        {
+            new() { BarberId = barberId, DayOfWeek = 1, Label = "Lunes", IsOpen = true, OpenTime = "09:00", CloseTime = "20:00", BreakStart = "14:00", BreakEnd = "15:00", SlotIntervalMinutes = 30 },
+            new() { BarberId = barberId, DayOfWeek = 2, Label = "Martes", IsOpen = true, OpenTime = "09:00", CloseTime = "20:00", BreakStart = "14:00", BreakEnd = "15:00", SlotIntervalMinutes = 30 },
+            new() { BarberId = barberId, DayOfWeek = 3, Label = "Miercoles", IsOpen = true, OpenTime = "09:00", CloseTime = "20:00", BreakStart = "14:00", BreakEnd = "15:00", SlotIntervalMinutes = 30 },
+            new() { BarberId = barberId, DayOfWeek = 4, Label = "Jueves", IsOpen = true, OpenTime = "09:00", CloseTime = "20:00", BreakStart = "14:00", BreakEnd = "15:00", SlotIntervalMinutes = 30 },
+            new() { BarberId = barberId, DayOfWeek = 5, Label = "Viernes", IsOpen = true, OpenTime = "09:00", CloseTime = "21:00", BreakStart = "14:00", BreakEnd = "15:00", SlotIntervalMinutes = 30 },
+            new() { BarberId = barberId, DayOfWeek = 6, Label = "Sabado", IsOpen = true, OpenTime = "10:00", CloseTime = "18:00", BreakStart = "", BreakEnd = "", SlotIntervalMinutes = 30 },
+            new() { BarberId = barberId, DayOfWeek = 0, Label = "Domingo", IsOpen = false, OpenTime = "", CloseTime = "", BreakStart = "", BreakEnd = "", SlotIntervalMinutes = 30 }
+        };
+    }
+
     [HttpGet("available-slots")]
     public async Task<IActionResult> GetAvailableSlots(
         [FromQuery] int barberId,
@@ -61,6 +75,15 @@ public class ReservationsController : ControllerBase
         }
 
         var dayOfWeek = (int)parsedDate.DayOfWeek;
+
+        var hasBusinessHours = await _context.BarberBusinessHours
+            .AnyAsync(x => x.BarberId == barberId);
+
+        if (!hasBusinessHours)
+        {
+            _context.BarberBusinessHours.AddRange(GetDefaultHours(barberId));
+            await _context.SaveChangesAsync();
+        }
 
         var businessHour = await _context.BarberBusinessHours
             .FirstOrDefaultAsync(x => x.BarberId == barberId && x.DayOfWeek == dayOfWeek);
