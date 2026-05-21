@@ -179,6 +179,27 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/db-health", async (AppDbContext dbContext) =>
+{
+    var canConnect = await dbContext.Database.CanConnectAsync();
+
+    if (!canConnect)
+    {
+        return Results.Problem("No se pudo conectar a la base de datos.");
+    }
+
+    var barbers = await dbContext.Barbers.CountAsync();
+    var services = await dbContext.Services.CountAsync();
+    var users = await dbContext.Users.CountAsync();
+
+    return Results.Ok(new
+    {
+        status = "ok",
+        barbers,
+        services,
+        users
+    });
+});
 app.MapControllers();
 
 app.Run();
