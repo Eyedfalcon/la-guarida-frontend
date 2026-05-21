@@ -76,7 +76,17 @@ builder.Services.AddCors(options =>
             allowedOrigins = new[] { "http://localhost:5173" };
         }
 
-        policy.WithOrigins(allowedOrigins)
+        policy.SetIsOriginAllowed(origin =>
+              {
+                  if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                  {
+                      return false;
+                  }
+
+                  return allowedOrigins.Contains(origin)
+                      || uri.Host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)
+                      || (builder.Environment.IsDevelopment() && uri.Host == "localhost");
+              })
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
