@@ -7,6 +7,18 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
+static bool IsAllowedCorsOrigin(string? origin, string[] configuredOrigins, bool isDevelopment)
+{
+    if (string.IsNullOrWhiteSpace(origin) || !Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+    {
+        return false;
+    }
+
+    return configuredOrigins.Contains(origin)
+        || uri.Host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)
+        || (isDevelopment && uri.Host == "localhost");
+}
+
 var builder = WebApplication.CreateBuilder(args);
 var port = Environment.GetEnvironmentVariable("PORT");
 
@@ -64,30 +76,21 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<JwtService>();
 
+var configuredCorsOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
+if (builder.Environment.IsDevelopment() && configuredCorsOrigins.Length == 0)
+{
+    configuredCorsOrigins = new[] { "http://localhost:5173" };
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("frontend", policy =>
     {
-        var allowedOrigins = builder.Configuration
-            .GetSection("Cors:AllowedOrigins")
-            .Get<string[]>() ?? Array.Empty<string>();
-
-        if (builder.Environment.IsDevelopment() && allowedOrigins.Length == 0)
-        {
-            allowedOrigins = new[] { "http://localhost:5173" };
-        }
-
         policy.SetIsOriginAllowed(origin =>
-              {
-                  if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-                  {
-                      return false;
-                  }
-
-                  return allowedOrigins.Contains(origin)
-                      || uri.Host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)
-                      || (builder.Environment.IsDevelopment() && uri.Host == "localhost");
-              })
+              IsAllowedCorsOrigin(origin, configuredCorsOrigins, builder.Environment.IsDevelopment()))
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -141,6 +144,27 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+app.Use(async (context, next) =>
+{
+    var origin = context.Request.Headers.Origin.ToString();
+
+    if (IsAllowedCorsOrigin(origin, configuredCorsOrigins, app.Environment.IsDevelopment()))
+    {
+        context.Response.Headers.AccessControlAllowOrigin = origin;
+        context.Response.Headers.Vary = "Origin";
+
+        if (HttpMethods.IsOptions(context.Request.Method))
+        {
+            context.Response.Headers.AccessControlAllowMethods = "GET,POST,PUT,DELETE,OPTIONS";
+            context.Response.Headers.AccessControlAllowHeaders = "Content-Type,Authorization";
+            context.Response.StatusCode = StatusCodes.Status204NoContent;
+            return;
+        }
+    }
+
+    await next();
+});
 
 app.UseCors("frontend");
 
