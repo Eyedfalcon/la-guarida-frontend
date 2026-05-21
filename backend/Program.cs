@@ -179,26 +179,43 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
-app.MapGet("/db-health", async (AppDbContext dbContext) =>
+app.MapGet("/db-health", async (AppDbContext dbContext, IConfiguration configuration) =>
 {
-    var canConnect = await dbContext.Database.CanConnectAsync();
+    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-    if (!canConnect)
+    try
     {
-        return Results.Problem("No se pudo conectar a la base de datos.");
+        var canConnect = await dbContext.Database.CanConnectAsync(timeout.Token);
+
+        if (!canConnect)
+        {
+            return Results.Problem("No se pudo conectar a la base de datos.");
+        }
+
+        var barbers = await dbContext.Barbers.CountAsync(timeout.Token);
+        var services = await dbContext.Services.CountAsync(timeout.Token);
+        var users = await dbContext.Users.CountAsync(timeout.Token);
+
+        return Results.Ok(new
+        {
+            status = "ok",
+            database = dbContext.Database.GetDbConnection().Database,
+            dataSource = dbContext.Database.GetDbConnection().DataSource,
+            barbers,
+            services,
+            users
+        });
     }
-
-    var barbers = await dbContext.Barbers.CountAsync();
-    var services = await dbContext.Services.CountAsync();
-    var users = await dbContext.Users.CountAsync();
-
-    return Results.Ok(new
+    catch (Exception ex)
     {
-        status = "ok",
-        barbers,
-        services,
-        users
-    });
+        var configured = !string.IsNullOrWhiteSpace(configuration.GetConnectionString("DefaultConnection"));
+
+        return Results.Problem(
+            detail: $"{ex.GetType().Name}: {ex.Message}",
+            title: configured
+                ? "No se pudo conectar a la base de datos configurada."
+                : "No existe ConnectionStrings__DefaultConnection en Railway.");
+    }
 });
 app.MapControllers();
 
